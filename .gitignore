@@ -1,0 +1,15 @@
+*.pyc
+Conf.py
+*.swp
+*.py~
+*.out
+*.lda
+*.d2v
+*.mm
+*.npy
+*.index
+*.state
+*.dict
+*/textos/*
+.DS_Store
+deploy
