@@ -24,6 +24,7 @@ import numpy as np
 from lda2vec import utils
 from lda2vec import prepare_topics, print_top_words_per_topic, topic_coherence
 
+import pyLDAvis
 
 """
 	No funciona
@@ -34,8 +35,15 @@ class LDA2Vec(object):
 	def __init__(self):
 		super(LDA2Vec, self).__init__()
 
-	def train(self, input_path, save_location, dimension = 50, epochs = 20, ides="Number"):
-		max_length = 500
+	def generateHTML(self, fileLocation):
+		npz = np.load(open(fileLocation, 'r'))
+		dat = {k: v for (k, v) in npz.iteritems()}
+		dat['vocab'] = dat['vocab'].tolist()
+		prepared_data = pyLDAvis.prepare(dat['topic_term_dists'], dat['doc_topic_dists'], dat['doc_lengths'] * 1.0, dat['vocab'], dat['term_frequency'] * 1.0, mds='tsne')
+		pyLDAvis.save_html(prepared_data, "ldaVis.html")
+
+	def train(self, input_path, save_location, dimension = 50, epochs = 50, ides="Number"):
+		max_length = 4096
 		sentences = LabeledLineSentence(input_path, ides)
 		texts = [unicode(" ".join(x.words[:max_length]), errors='ignore') for x in sentences]
 
@@ -75,30 +83,32 @@ class LDA2Vec(object):
 		# Count all token frequencies
 		tok_idx, freq = np.unique(flattened, return_counts=True)
 		term_frequency = np.zeros(lda2v.n_vocab, dtype='int32')
-		term_frequency[tok_idx] = freq
+		for i in xrange(freq.shape[0]):
+			term_frequency[tok_idx[i]] = freq[i]
+		
 
 		optimizer = O.Adam()
 		optimizer.setup(model)
-		clip = chainer.optimizer.GradientClipping(5.0)
+		clip = chainer.optimizer.GradientClipping(1.0)
 		optimizer.add_hook(clip)
 
 		j = 0
 		epoch = 0
 		fraction = batchsize * 1.0 / flattened.shape[0]
 		progress = shelve.open('progress.shelve')
-		for epoch in range(40):
+		for epoch in range(epochs):
 			serializers.save_hdf5("lda2vec.hdf5", model)
 			data = prepare_topics(model.mixture.weights.W.data.copy(),
 						  model.mixture.factors.W.data.copy(),
 						  model.sampler.W.data.copy(),
 						  words)
 			top_words = print_top_words_per_topic(data)
-			if j % 100 == 0 and j > 100:
+			"""if j % 100 == 0 and j > 100:
 				coherence = topic_coherence(top_words)
 				for j in range(dimension):
 					print j, coherence[(j, 'cv')]
 				kw = dict(top_words=top_words, coherence=coherence, epoch=epoch)
-				progress[str(epoch)] = pickle.dumps(kw)
+				progress[str(epoch)] = pickle.dumps(kw)"""
 			data['doc_lengths'] = doc_lengths
 			data['term_frequency'] = term_frequency
 			np.savez('topics.pyldavis', **data)
@@ -122,8 +132,8 @@ class LDA2Vec(object):
 			
 
 class LDA2Vec_train(Chain):
-	def __init__(self, tokens, vocab, n_topics=10, n_units=128, dropout_ratio=0.5, train=True,
-				 counts=None, n_samples=5, word_dropout_ratio=0.0, power=0.75):
+	def __init__(self, tokens, vocab, n_topics=10, n_units=128, dropout_ratio=0.2, train=True,
+				 counts=None, n_samples=15, word_dropout_ratio=0.0, power=0.75):
 
 		self.n_documents = len(tokens)
 		self.n_vocab = len(vocab)
@@ -134,7 +144,7 @@ class LDA2Vec_train(Chain):
 		em = EmbedMixture(self.n_documents, n_topics, n_units, dropout_ratio=dropout_ratio)
 		kwargs = {}
 		kwargs['mixture'] = em
-		kwargs['sampler'] = L.NegativeSampling(n_units, counts, n_samples, power=power)
+		kwargs['sampler'] = L.NegativeSampling(n_units, counts, n_samples)
 
 		super(LDA2Vec_train, self).__init__(**kwargs)
 		rand = np.random.random(self.sampler.W.data.shape)
@@ -189,4 +199,5 @@ class LDA2Vec_train(Chain):
 
 if __name__ == '__main__':
 	l2v = LDA2Vec()
-	l2v.train("/home/dani/crawler/limpiado.txt", "prueba.txt", ides="Strings")
+	#l2v.train("/home/dani/crawler/limpiado.txt", "prueba.txt", ides="Strings")
+	l2v.generateHTML('topics.pyldavis.npz')
